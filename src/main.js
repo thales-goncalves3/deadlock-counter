@@ -171,6 +171,7 @@ function createWindow() {
     alwaysOnTop: true,
     show: false,
     title: 'Deadlock Counter',
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
     backgroundColor: '#00000000',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true },
   });

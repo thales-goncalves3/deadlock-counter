@@ -1,13 +1,15 @@
 {
   "name": "deadlock-counter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Overlay de itens counter para os heróis inimigos no Deadlock (dados da deadlock-api.com)",
+  "author": "Deadlock Counter",
   "main": "src/main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.js",
-    "dist": "electron-builder --win portable"
+    "dist": "electron-builder --win nsis",
+    "dist:portable": "electron-builder --win portable"
   },
   "devDependencies": {
     "electron": "^45.3.1",
@@ -16,7 +18,21 @@
   "build": {
     "appId": "local.deadlock-counter",
     "productName": "Deadlock Counter",
-    "files": ["src/**/*", "package.json"],
-    "win": { "target": "portable" }
+    "files": ["src/**/*", "build/icon.png", "package.json"],
+    "directories": { "output": "dist" },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "artifactName": "DeadlockCounter-Setup-${version}.${ext}"
+    },
+    "portable": { "artifactName": "DeadlockCounter-${version}-portatil.${ext}" },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Deadlock Counter",
+      "runAfterFinish": true
+    }
   }
 }
