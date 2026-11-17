@@ -51,16 +51,25 @@
 
       <section id="results">
         <div id="status" class="mut"></div>
-        <h3>Itens counter <span class="mut small">vs média do item</span></h3>
+        <div id="controls">
+          <div class="row">
+            <div class="seg mini-seg" id="phase-seg"></div>
+            <span id="filter-sum" class="mut small"></span>
+          </div>
+          <div class="row edit-only" id="filters"></div>
+          <div class="row" id="focus"></div>
+        </div>
+        <h3>Itens counter <span class="mut small" title="Taxa de vitória normal do item nesses confrontos → taxa contra esses inimigos">normal → contra eles</span></h3>
         <ol id="items"></ol>
         <h3>Confrontos <span id="overall" class="mut small"></span></h3>
         <ol id="matchups"></ol>
       </section>
     </main>
     <footer class="mut small">
-      <span id="foot"></span>
+      <span id="foot" class="edit-only"></span>
+      <span id="foot-keys" class="view-only">Ctrl+Shift+E inimigo · Ctrl+Shift+F fase</span>
       <span class="spacer"></span>
-      <span>dados: deadlock-api.com, últimos 30 dias</span>
+      <span class="edit-only">dados: deadlock-api.com, últimos 30 dias</span>
     </footer>
   </div>
   <script src="app.js"></script>

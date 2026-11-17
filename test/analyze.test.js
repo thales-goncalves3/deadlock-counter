@@ -60,3 +60,36 @@ test('findLiveMatch separa o time inimigo', () => {
   assert.deepEqual(findLiveMatch(matches, 2), { matchId: 9, heroId: 11, enemyIds: [12, 13] });
   assert.equal(findLiveMatch(matches, 99), null);
 });
+
+test('analyzeItems devolve taxa normal e taxa contra eles', () => {
+  const { analyzeItems } = require('../src/analyze');
+  const items = new Map([[1, { id: 1 }], [2, { id: 2 }]]);
+  const rows = [
+    { item_id: 1, bucket: 10, wins: 7000, matches: 10000 },
+    { item_id: 1, bucket: 11, wins: 4000, matches: 10000 },
+    { item_id: 2, bucket: 10, wins: 6000, matches: 10000 },
+    { item_id: 2, bucket: 11, wins: 4000, matches: 10000 },
+  ];
+  const [top] = analyzeItems(rows, [10], items);
+  assert.ok(Math.abs(top.wr - (top.expected + top.delta)) < 1e-12);
+  assert.ok(top.wr > top.expected);
+});
+
+test('phaseQuery monta o filtro de tempo de compra', () => {
+  const { phaseQuery } = require('../src/analyze');
+  assert.equal(phaseQuery('all'), '');
+  assert.equal(phaseQuery('early'), '&min_bought_at_s=0&max_bought_at_s=540');
+  assert.equal(phaseQuery('late'), '&min_bought_at_s=1200');
+  assert.equal(phaseQuery('xpto'), '');
+});
+
+test('filterItems filtra por tipo e tier', () => {
+  const { filterItems } = require('../src/analyze');
+  const byId = new Map([
+    [1, { slot: 'weapon', tier: 1 }], [2, { slot: 'spirit', tier: 3 }], [3, { slot: 'weapon', tier: 3 }],
+  ]);
+  const list = [{ itemId: 1 }, { itemId: 2 }, { itemId: 3 }, { itemId: 99 }];
+  assert.deepEqual(filterItems(list, byId, {}).map((r) => r.itemId), [1, 2, 3]);
+  assert.deepEqual(filterItems(list, byId, { slots: ['weapon'] }).map((r) => r.itemId), [1, 3]);
+  assert.deepEqual(filterItems(list, byId, { slots: ['weapon'], tiers: [3] }).map((r) => r.itemId), [3]);
+});

@@ -2,12 +2,16 @@ const { app, BrowserWindow, globalShortcut, ipcMain, screen } = require('electro
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { parseAccountId, analyzeItems, analyzeMatchups, findLiveMatch } = require('./analyze');
+const {
+  parseAccountId, analyzeItems, analyzeMatchups, findLiveMatch, phaseQuery, filterItems,
+} = require('./analyze');
 
 const API = 'https://api.deadlock-api.com';
 const HOUR = 3600e3;
-const KEYS = { mode: 'Control+Shift+D', hide: 'Control+Shift+H' };
-const SIZE = { edit: { width: 780, height: 680 }, view: { width: 360, height: 560 } };
+const KEYS = {
+  mode: 'Control+Shift+D', hide: 'Control+Shift+H', focus: 'Control+Shift+E', phase: 'Control+Shift+F',
+};
+const SIZE = { edit: { width: 780, height: 680 }, view: { width: 360, height: 600 } };
 
 let win = null;
 let mode = 'edit';
@@ -25,8 +29,12 @@ function saveCfg() {
 
 // ---------- API com cache em disco ----------
 // Chamadas iguais ao mesmo tempo (pré-busca + cálculo) dividem a mesma requisição.
+// Também guarda em memória, porque cada clique num filtro recalcula.
 const inflight = new Map();
+const memo = new Map();
 function getJson(pathAndQuery, ttlMs) {
+  const m = memo.get(pathAndQuery);
+  if (ttlMs && m && Date.now() - m.t < ttlMs) return Promise.resolve(m.json);
   if (!inflight.has(pathAndQuery)) {
     inflight.set(pathAndQuery, fetchJson(pathAndQuery, ttlMs).finally(() => inflight.delete(pathAndQuery)));
   }
@@ -39,7 +47,14 @@ async function fetchJson(pathAndQuery, ttlMs) {
     crypto.createHash('sha1').update(url).digest('hex') + '.json');
   const cached = () => JSON.parse(fs.readFileSync(file, 'utf8'));
   if (ttlMs) {
-    try { if (Date.now() - fs.statSync(file).mtimeMs < ttlMs) return cached(); } catch {}
+    try {
+      const st = fs.statSync(file);
+      if (Date.now() - st.mtimeMs < ttlMs) {
+        const json = cached();
+        memo.set(pathAndQuery, { t: st.mtimeMs, json });
+        return json;
+      }
+    } catch {}
   }
   let res;
   try {
@@ -56,6 +71,7 @@ async function fetchJson(pathAndQuery, ttlMs) {
   if (ttlMs) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(json));
+    memo.set(pathAndQuery, { t: Date.now(), json });
   }
   return json;
 }
@@ -91,18 +107,22 @@ function badgeQuery() {
   return cfg.minBadge ? `&min_average_badge=${cfg.minBadge * 10 + 1}` : '';
 }
 
-const itemStats = (heroId) =>
-  getJson(`/v1/analytics/item-stats?hero_id=${Number(heroId)}&bucket=enemy_hero&min_matches=20${badgeQuery()}`, HOUR);
+const itemStats = (heroId, phase) =>
+  getJson(`/v1/analytics/item-stats?hero_id=${Number(heroId)}&bucket=enemy_hero&min_matches=20`
+    + `${phaseQuery(phase)}${badgeQuery()}`, HOUR);
 
-async function analyze({ heroId, enemyIds }) {
+// focus: id de um inimigo (counters só contra ele) ou null (time todo).
+async function analyze({ heroId, enemyIds, phase = 'all', focus = null, slots = [], tiers = [] }) {
   const assets = await loadAssets();
   const itemsById = new Map(assets.items.map((i) => [i.id, i]));
   const [itemRows, counterRows] = await Promise.all([
-    itemStats(heroId),
+    itemStats(heroId, phase),
     getJson(`/v1/analytics/hero-counter-stats?min_matches=20${badgeQuery()}`, 6 * HOUR),
   ]);
+  const target = focus && enemyIds.includes(focus) ? [focus] : enemyIds;
+  const all = analyzeItems(itemRows, target, itemsById);
   return {
-    items: analyzeItems(itemRows, enemyIds, itemsById),
+    items: filterItems(all, itemsById, { slots, tiers }).slice(0, 10),
     matchups: analyzeMatchups(counterRows, heroId, enemyIds),
   };
 }
@@ -173,8 +193,8 @@ function devShot(dir) {
   win.webContents.once('did-finish-load', async () => {
     await wait(2500);
     await win.webContents.executeJavaScript(
-      `state.me=${Number(me)};state.enemies=[${en.split(',').map(Number)}];state.target='enemy';changed();`);
-    await wait(4000);
+      `state.me=${Number(me)};state.enemies=[${en.split(',').map(Number)}];state.target='enemy';${process.env.DC_JS || ''};changed();`);
+    await wait(Number(process.env.DC_WAIT) || 4000);
     fs.writeFileSync(path.join(dir, 'edit.png'), (await win.webContents.capturePage()).toPNG());
     applyMode('view');
     await wait(1200);
@@ -191,7 +211,7 @@ app.whenReady().then(() => {
   loadCfg();
   handle('assets', loadAssets);
   handle('analyze', analyze);
-  handle('prefetch', async (heroId) => { await itemStats(heroId); });
+  handle('prefetch', async ({ heroId, phase }) => { await itemStats(heroId, phase); });
   handle('detect', detect);
   handle('cfg:get', () => ({ ...cfg, keys: KEYS }));
   handle('cfg:set', (patch) => {
@@ -209,6 +229,8 @@ app.whenReady().then(() => {
 
   createWindow();
   globalShortcut.register(KEYS.mode, () => applyMode(mode === 'edit' ? 'view' : 'edit'));
+  globalShortcut.register(KEYS.focus, () => win && win.webContents.send('hotkey', 'focus'));
+  globalShortcut.register(KEYS.phase, () => win && win.webContents.send('hotkey', 'phase'));
   globalShortcut.register(KEYS.hide, () => {
     if (!win) return;
     if (win.isVisible()) win.hide();

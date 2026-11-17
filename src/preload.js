@@ -9,7 +9,8 @@ const call = async (name, arg) => {
 contextBridge.exposeInMainWorld('dc', {
   assets: () => call('assets'),
   analyze: (q) => call('analyze', q),
-  prefetch: (heroId) => call('prefetch', heroId),
+  prefetch: (q) => call('prefetch', q),
+  onHotkey: (fn) => ipcRenderer.on('hotkey', (_e, k) => fn(k)),
   detect: () => call('detect'),
   getCfg: () => call('cfg:get'),
   setCfg: (patch) => call('cfg:set', patch),

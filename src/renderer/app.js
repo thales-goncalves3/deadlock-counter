@@ -12,24 +12,38 @@ const img = (src, cls) => {
   i.draggable = false;
   return i;
 };
-const pp = (x) => `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(1)}`;
-const pct = (x) => `${(x * 100).toFixed(1)}%`;
+const num1 = (x) => (x * 100).toFixed(1).replace('.', ',');
+const pp = (x) => `${x >= 0 ? '+' : '−'}${num1(Math.abs(x))}`;
+const pct = (x) => `${num1(x)}%`;
+
+const PHASES = [['all', 'Tudo'], ['early', 'Início'], ['mid', 'Meio'], ['late', 'Fim']];
+const PHASE_HINT = {
+  all: 'da partida toda', early: 'comprados até 9 min', mid: 'comprados de 9 a 20 min', late: 'comprados depois de 20 min',
+};
+const SLOTS = [['weapon', 'Arma'], ['vitality', 'Vitalidade'], ['spirit', 'Espírito']];
+const TIERS = [1, 2, 3, 4];
 
 const MAX_ENEMIES = 6;
 const state = {
   heroes: [], heroById: new Map(), itemById: new Map(), ranks: [],
   me: null, enemies: [], target: 'me', search: '', cfg: null, seq: 0,
+  phase: 'all', focus: null, slots: [], tiers: [],
 };
 
 // ---------- seleção ----------
 function save() {
   localStorage.setItem('picks', JSON.stringify({ me: state.me, enemies: state.enemies }));
+  localStorage.setItem('filters', JSON.stringify({ phase: state.phase, slots: state.slots, tiers: state.tiers }));
 }
 function restore() {
   try {
     const p = JSON.parse(localStorage.getItem('picks') || '{}');
     if (state.heroById.has(p.me)) state.me = p.me;
     state.enemies = (p.enemies || []).filter((id) => state.heroById.has(id)).slice(0, MAX_ENEMIES);
+    const f = JSON.parse(localStorage.getItem('filters') || '{}');
+    if (PHASES.some(([k]) => k === f.phase)) state.phase = f.phase;
+    state.slots = (f.slots || []).filter((x) => SLOTS.some(([k]) => k === x));
+    state.tiers = (f.tiers || []).filter((x) => TIERS.includes(x));
   } catch {}
 }
 
@@ -47,11 +61,25 @@ function pickHero(id) {
 }
 
 function changed() {
+  if (state.focus && !state.enemies.includes(state.focus)) state.focus = null;
   save();
   renderPicks();
   renderGrid();
+  renderControls();
   refresh();
 }
+
+function cyclePhase() {
+  const i = PHASES.findIndex(([k]) => k === state.phase);
+  state.phase = PHASES[(i + 1) % PHASES.length][0];
+  changed();
+}
+function cycleFocus() {
+  const list = [null, ...state.enemies];
+  state.focus = list[(list.indexOf(state.focus) + 1) % list.length];
+  changed();
+}
+const toggle = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
 
 // ---------- render ----------
 function heroSlot(id, cls, onClick) {
@@ -82,7 +110,7 @@ function renderPicks() {
       }));
   }
   $('#enemy-count').textContent = `${state.enemies.length}/${MAX_ENEMIES}`;
-  document.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('on', b.dataset.target === state.target));
+  document.querySelectorAll('#picker .seg button').forEach((b) => b.classList.toggle('on', b.dataset.target === state.target));
 }
 
 function renderGrid() {
@@ -97,6 +125,48 @@ function renderGrid() {
     d.append(img(h.img), el('span', null, h.name));
     d.onclick = () => pickHero(h.id);
     grid.append(d);
+  }
+}
+
+function renderControls() {
+  const ps = $('#phase-seg');
+  ps.replaceChildren(...PHASES.map(([k, label]) => {
+    const b = el('button', state.phase === k ? 'on' : '', label);
+    b.title = `Itens ${PHASE_HINT[k]}`;
+    b.onclick = () => { state.phase = k; changed(); };
+    return b;
+  }));
+
+  const f = $('#filters');
+  f.replaceChildren();
+  for (const [k, label] of SLOTS) {
+    const b = el('button', `chip ${k}${state.slots.includes(k) ? ' on' : ''}`, label);
+    b.onclick = () => { state.slots = toggle(state.slots, k); changed(); };
+    f.append(b);
+  }
+  f.append(el('span', 'sep'));
+  for (const t of TIERS) {
+    const b = el('button', `chip${state.tiers.includes(t) ? ' on' : ''}`, `T${t}`);
+    b.onclick = () => { state.tiers = toggle(state.tiers, t); changed(); };
+    f.append(b);
+  }
+  const sum = [...SLOTS.filter(([k]) => state.slots.includes(k)).map(([, l]) => l),
+    ...[...state.tiers].sort().map((t) => `T${t}`)];
+  $('#filter-sum').textContent = sum.length ? `só ${sum.join(', ')}` : '';
+
+  const fo = $('#focus');
+  fo.replaceChildren(el('span', 'lbl2', 'Contra:'));
+  if (!state.enemies.length) return;
+  const team = el('button', `fchip team${state.focus == null ? ' on' : ''}`, 'Time todo');
+  team.onclick = () => { state.focus = null; changed(); };
+  fo.append(team);
+  for (const id of state.enemies) {
+    const h = state.heroById.get(id);
+    const b = el('button', `fchip${state.focus === id ? ' on' : ''}`);
+    b.title = `Counters só contra ${h.name}`;
+    b.append(img(h.img));
+    b.onclick = () => { state.focus = state.focus === id ? null : id; changed(); };
+    fo.append(b);
   }
 }
 
@@ -116,15 +186,21 @@ function renderResults(res) {
     ic.append(img(it.img));
     const mid = el('div');
     const name = el('div', 'item-name', it.name);
-    name.title = `${it.name} · T${it.tier} · ${it.cost} almas\nMédia do item: ${pct(r.baseWr)} · ${r.matches.toLocaleString('pt-BR')} partidas contra esses heróis`;
+    name.title = `${it.name} · T${it.tier} · ${it.cost} almas\n`
+      + `Normal nesses confrontos: ${pct(r.expected)} → contra eles: ${pct(r.wr)} (${pp(r.delta)} pontos)\n`
+      + `${r.matches.toLocaleString('pt-BR')} partidas`;
     const sub = el('div', 'item-sub', `T${it.tier} · ${it.cost.toLocaleString('pt-BR')}`);
-    if (r.best) {
+    if (r.best && state.focus == null) {
       const h = state.heroById.get(r.best.enemyId);
       sub.append(document.createTextNode(' · melhor vs'), img(h.img, 'mini'));
-      sub.title = `${h.name}: ${pp(r.best.delta)} pp`;
+      sub.title = `${h.name}: ${pp(r.best.delta)} pontos`;
     }
     mid.append(name, sub);
-    li.append(ic, mid, el('div', `delta ${r.delta >= 0 ? 'pos' : 'neg'}`, pp(r.delta)));
+    const cls = r.delta >= 0 ? 'pos' : 'neg';
+    const nums = el('div', 'nums');
+    nums.append(el('span', 'from', `${pct(r.expected)} → `), el('span', `to ${cls}`, pct(r.wr)),
+      el('span', `d ${cls}`, `${pp(r.delta)} pontos`));
+    li.append(ic, mid, nums);
     items.append(li);
   }
   if (!res.items.length) items.append(el('li', 'mut', 'Poucos dados para essa combinação.'));
@@ -153,19 +229,23 @@ function renderResults(res) {
 // ---------- dados ----------
 async function refresh() {
   const seq = ++state.seq;
-  if (state.me) window.dc.prefetch(state.me).catch(() => {}); // adianta a consulta lenta
+  if (state.me) window.dc.prefetch({ heroId: state.me, phase: state.phase }).catch(() => {}); // adianta a consulta lenta
   if (!state.me || !state.enemies.length) {
     $('#items').replaceChildren(); $('#matchups').replaceChildren(); $('#overall').textContent = '';
     setStatus(state.me ? 'Escolha os inimigos.' : 'Escolha seu herói e os inimigos.');
     return;
   }
-  setStatus('Calculando… (a 1ª vez de cada herói leva uns 5 s)');
+  setStatus('Calculando… (a 1ª vez de cada herói e fase leva uns 5 s)');
   document.body.classList.add('loading');
   try {
-    const res = await window.dc.analyze({ heroId: state.me, enemyIds: state.enemies });
+    const res = await window.dc.analyze({
+      heroId: state.me, enemyIds: state.enemies, phase: state.phase,
+      focus: state.focus, slots: state.slots, tiers: state.tiers,
+    });
     if (seq !== state.seq) return;
     const me = state.heroById.get(state.me).name;
-    setStatus(`${me}: itens que ganham mais que a média contra esse time (pontos percentuais).`);
+    const vs = state.focus ? state.heroById.get(state.focus).name : 'esse time';
+    setStatus(`${me}: itens ${PHASE_HINT[state.phase]} que mais aumentam a vitória contra ${vs}.`);
     renderResults(res);
   } catch (e) {
     if (seq === state.seq) setStatus(e.message, true);
@@ -195,7 +275,9 @@ function fillCfg() {
   const sel = $('#cfg-badge');
   sel.replaceChildren(new Option('Todos', 0), ...state.ranks.map((r) => new Option(`${r.name}+`, r.tier)));
   sel.value = String(c.minBadge || 0);
-  $('#hint').textContent = `${c.keys.mode.replace('Control', 'Ctrl')} jogo/editar · ${c.keys.hide.replace('Control', 'Ctrl')} esconder`;
+  const k = (x) => x.replace('Control', 'Ctrl');
+  $('#hint').title = $('#hint').textContent = `${k(c.keys.mode)} jogo/editar · ${k(c.keys.focus)} inimigo · `
+    + `${k(c.keys.phase)} fase · ${k(c.keys.hide)} esconder`;
   $('#foot').textContent = state.cfg.minBadge
     ? `rank ${state.ranks.find((r) => r.tier === state.cfg.minBadge)?.name || ''}+` : 'todos os ranks';
 }
@@ -214,8 +296,13 @@ async function saveCfg() {
 // ---------- início ----------
 async function init() {
   window.dc.onMode((m) => {
-    document.body.className = m;
+    document.body.classList.toggle('edit', m === 'edit');
+    document.body.classList.toggle('view', m === 'view');
     if (m === 'edit') $('#search').focus();
+  });
+  window.dc.onHotkey((key) => {
+    if (key === 'focus') cycleFocus();
+    if (key === 'phase') cyclePhase();
   });
   $('#btn-view').onclick = () => window.dc.setMode('view');
   $('#btn-quit').onclick = () => window.dc.quit();
@@ -223,7 +310,7 @@ async function init() {
   $('#btn-detect').onclick = detect;
   $('#btn-cfg').onclick = () => { $('#cfg').hidden = !$('#cfg').hidden; $('#cfg-msg').textContent = ''; };
   $('#cfg-save').onclick = saveCfg;
-  document.querySelectorAll('.seg button').forEach((b) => {
+  document.querySelectorAll('#picker .seg button').forEach((b) => {
     b.onclick = () => { state.target = b.dataset.target; renderPicks(); renderGrid(); };
   });
   $('#search').oninput = (e) => { state.search = e.target.value; renderGrid(); };
@@ -252,6 +339,7 @@ async function init() {
   if (state.me) state.target = 'enemy';
   renderPicks();
   renderGrid();
+  renderControls();
   refresh();
   if (state.cfg.accountId) detect();
 }

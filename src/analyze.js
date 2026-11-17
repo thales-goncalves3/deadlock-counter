@@ -26,8 +26,9 @@ function parseAccountId(input) {
 // parece bom contra ele. Esse efeito (taxa contra o inimigo − taxa geral, somando todos
 // os itens) sai da conta, e sobra só o quanto o item ajuda além do esperado.
 // Pontuação = média simples dos ganhos contra cada inimigo, em pontos percentuais.
+// Para exibir: `expected` = taxa normal do item nesses confrontos; `wr` = taxa contra eles.
 function analyzeItems(rows, enemyIds, itemsById, opts = {}) {
-  const { prior = 800, minMatches = 500, limit = 10 } = opts;
+  const { prior = 800, minMatches = 400, limit = Infinity } = opts;
   const enemies = new Set(enemyIds);
   const agg = new Map();
   const tot = { w: 0, m: 0 };
@@ -61,27 +62,58 @@ function analyzeItems(rows, enemyIds, itemsById, opts = {}) {
     if (!item || !a.m) continue;
     const baseWr = a.w / a.m;
     let vsMatches = 0;
+    let expSum = 0;
     const per = [];
     for (const e of enemies) {
       const p = a.per.get(e) || { w: 0, m: 0 };
       vsMatches += p.m;
       const expected = baseWr + effect.get(e);
+      expSum += expected;
       const wr = (p.w + prior * expected) / (p.m + prior);
       per.push({ enemyId: e, delta: wr - expected, matches: p.m });
     }
     if (vsMatches < minMatches) continue;
     const delta = per.reduce((s, p) => s + p.delta, 0) / per.length;
+    const expected = expSum / per.length;
     per.sort((x, y) => y.delta - x.delta);
     out.push({
       itemId,
       delta,
       baseWr,
+      expected,
+      wr: expected + delta,
       matches: vsMatches,
       best: per[0] && per[0].delta > 0 ? per[0] : null,
     });
   }
   out.sort((x, y) => y.delta - x.delta);
   return out.slice(0, limit);
+}
+
+// Fases da partida (tempo de compra do item, em segundos).
+const PHASES = {
+  all: { label: 'Tudo' },
+  early: { label: 'Início', min: 0, max: 540 },
+  mid: { label: 'Meio', min: 540, max: 1200 },
+  late: { label: 'Fim', min: 1200 },
+};
+function phaseQuery(phase) {
+  const p = PHASES[phase] || PHASES.all;
+  let q = '';
+  if (p.min != null) q += `&min_bought_at_s=${p.min}`;
+  if (p.max != null) q += `&max_bought_at_s=${p.max}`;
+  return q;
+}
+
+// Filtro de tipo (weapon/vitality/spirit) e tier, feito no app.
+function filterItems(list, itemsById, { slots, tiers } = {}) {
+  return list.filter((r) => {
+    const it = itemsById.get(r.itemId);
+    if (!it) return false;
+    if (slots && slots.length && !slots.includes(it.slot)) return false;
+    if (tiers && tiers.length && !tiers.includes(it.tier)) return false;
+    return true;
+  });
 }
 
 // rows: resposta de /v1/analytics/hero-counter-stats (todas as duplas herói × inimigo).
@@ -117,4 +149,6 @@ function findLiveMatch(matches, accountId) {
   return null;
 }
 
-module.exports = { parseAccountId, analyzeItems, analyzeMatchups, findLiveMatch };
+module.exports = {
+  parseAccountId, analyzeItems, analyzeMatchups, findLiveMatch, PHASES, phaseQuery, filterItems,
+};
