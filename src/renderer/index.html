@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src https://assets-bucket.deadlock-api.com data:">
+  <title>Deadlock Counter</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="edit">
+  <div id="frame">
+    <header id="bar">
+      <strong>Deadlock Counter</strong>
+      <span id="hint" class="mut"></span>
+      <span class="spacer"></span>
+      <button id="btn-detect" class="edit-only" title="Procurar sua partida ao vivo pelo SteamID">Detectar partida</button>
+      <button id="btn-clear" class="edit-only">Limpar</button>
+      <button id="btn-cfg" class="edit-only icon" title="Configurações">⚙</button>
+      <button id="btn-view" class="edit-only primary" title="Modo jogo: fica por cima e deixa o clique passar">Modo jogo</button>
+      <button id="btn-quit" class="edit-only icon" title="Fechar">✕</button>
+    </header>
+
+    <section id="cfg" class="edit-only" hidden>
+      <label>SteamID <input id="cfg-account" placeholder="SteamID3, SteamID64 ou link do perfil" spellcheck="false"></label>
+      <label>Rank mínimo <select id="cfg-badge"></select></label>
+      <button id="cfg-save" class="primary">Salvar</button>
+      <span id="cfg-msg" class="mut"></span>
+    </section>
+
+    <section id="picks">
+      <div class="side">
+        <div class="lbl">Seu herói</div>
+        <div id="slot-me" class="slots"></div>
+      </div>
+      <div class="vs">vs</div>
+      <div class="side grow">
+        <div class="lbl">Inimigos <span id="enemy-count" class="mut"></span></div>
+        <div id="slot-enemies" class="slots"></div>
+      </div>
+    </section>
+
+    <main>
+      <section id="picker" class="edit-only">
+        <div class="seg">
+          <button data-target="me">Seu herói</button>
+          <button data-target="enemy">Inimigos</button>
+        </div>
+        <input id="search" placeholder="Buscar herói…" spellcheck="false">
+        <div id="grid"></div>
+      </section>
+
+      <section id="results">
+        <div id="status" class="mut"></div>
+        <h3>Itens counter <span class="mut small">vs média do item</span></h3>
+        <ol id="items"></ol>
+        <h3>Confrontos <span id="overall" class="mut small"></span></h3>
+        <ol id="matchups"></ol>
+      </section>
+    </main>
+    <footer class="mut small">
+      <span id="foot"></span>
+      <span class="spacer"></span>
+      <span>dados: deadlock-api.com, últimos 30 dias</span>
+    </footer>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
